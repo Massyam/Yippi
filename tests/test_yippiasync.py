@@ -15,7 +15,7 @@ def vcr_cassette_dir(request):
 @pytest.fixture
 async def client(event_loop):
     async with aiohttp.ClientSession(loop=event_loop) as session:
-        client = AsyncYippiClient("Yippi", "0.1", "Error-", session)
+        client = AsyncYippiClient("Yippi", "0.1", "Error-", session=session)
         yield client
         await client.close()
 
@@ -23,7 +23,7 @@ async def client(event_loop):
 @pytest.mark.asyncio
 async def test_context(event_loop):
     async with aiohttp.ClientSession(loop=event_loop) as session:
-        async with AsyncYippiClient("Yippi", "0.1", "Error-", session):
+        async with AsyncYippiClient("Yippi", "0.1", "Error-", session=session):
             pass
 
 
@@ -194,7 +194,7 @@ async def test_pools(client):
     assert not pool.is_active
     assert pool.category == "series"
     assert not pool.is_deleted
-    assert set([653514, 653515, 653820]).issubset(pool.post_ids)
+    assert {653514, 653515, 653820}.issubset(pool.post_ids)
     assert pool.creator_name == "Emserdalf"
     assert pool.post_count == 48
 

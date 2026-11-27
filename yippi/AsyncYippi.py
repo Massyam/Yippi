@@ -1,10 +1,13 @@
 from typing import List
+from typing import Optional
 from typing import Union
 
+import aiohttp
 from aiohttp import BasicAuth
 from aiohttp import FormData
 
 from .AbstractYippi import AbstractYippi
+from .AbstractYippi import limiter
 from .Classes import Flag
 from .Classes import Note
 from .Classes import Pool
@@ -14,6 +17,18 @@ from .Exceptions import UserError
 
 
 class AsyncYippiClient(AbstractYippi):
+    def __init__(
+        self,
+        project_name: str,
+        version: str,
+        creator: str,
+        loop=None,
+        session: aiohttp.ClientSession = None,
+    ) -> None:
+        self._loop = loop
+        self._session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+        super().__init__(project_name, version, creator)
+
     async def close(self) -> None:
         await self._session.close()
 
@@ -23,9 +38,12 @@ class AsyncYippiClient(AbstractYippi):
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
 
-    async def _call_api(self, method, url, data=None, file=None, **kwargs):
+    @limiter.ratelimit("call_api", delay=True)
+    async def _call_api(
+        self, method: str, url: str, data: dict = None, file=None, **kwargs
+    ) -> Optional[Union[List[dict], dict]]:
         auth = None
-        if self._login:
+        if self._login != ("", ""):
             auth = BasicAuth(*self._login)
 
         if file:
@@ -46,8 +64,8 @@ class AsyncYippiClient(AbstractYippi):
         if not r.status == 204:
             return await r.json()
 
-    async def _verify_response(self, r):
-        if r.status >= 300 and r.status < 500:
+    async def _verify_response(self, r) -> None:
+        if 300 <= r.status < 500:
             res = await r.json()
             if r.status >= 400:
                 raise UserError(res.get("message") or res.get("reason"), json=res)
@@ -55,7 +73,10 @@ class AsyncYippiClient(AbstractYippi):
         elif r.status >= 500:
             raise APIError(r.reason)
 
-        if "application/json" not in r.headers.get("Content-Type") and r.status != 204:
+        if r.status != 204 and (
+            not r.headers.get("Content-Type")
+            or "application/json" not in r.headers.get("Content-Type")
+        ):
             res = await r.text()
             if "Not found." in res:
                 raise UserError("Not found.")
@@ -66,14 +87,14 @@ class AsyncYippiClient(AbstractYippi):
         tags: Union[List, str] = None,
         limit: int = None,
         page: Union[int, str] = None,
-    ):
-        response = await self._get_posts(tags, limit, page)
-        posts = [Post(self, **p) for p in response["posts"]]
+    ) -> List[Post]:
+        response = await self._get_posts(tags, limit, page)  # type: ignore
+        posts = [Post(p, client=self) for p in response]
         return posts
 
-    async def post(self, post_id: int):
-        api_res = await self._get_post(post_id)
-        return Post(self, **api_res["post"])
+    async def post(self, post_id: int) -> Post:
+        api_res = await self._get_post(post_id)  # type: ignore
+        return Post(api_res, client=self)
 
     async def notes(
         self,
@@ -81,10 +102,10 @@ class AsyncYippiClient(AbstractYippi):
         post_id: int = None,
         post_tags_match: Union[List, str] = None,
         creator_name: str = None,
-        creator_id: str = None,
+        creator_id: int = None,
         is_active: bool = None,
         limit: int = None,
-    ):
+    ) -> List[Note]:
         response = await self._get_notes(
             body_matches,
             post_id,
@@ -93,8 +114,8 @@ class AsyncYippiClient(AbstractYippi):
             creator_id,
             is_active,
             limit,
-        )
-        result = [Note(self, **n) for n in response]
+        )  # type: ignore
+        result = [Note(n, client=self) for n in response]
         return result
 
     async def flags(
@@ -103,9 +124,9 @@ class AsyncYippiClient(AbstractYippi):
         creator_id: int = None,
         creator_name: str = None,
         limit: int = None,
-    ):
-        response = await self._get_flags(post_id, creator_id, creator_name)
-        result = [Flag(self, **f) for f in response]
+    ) -> List[Flag]:
+        response = await self._get_flags(post_id, creator_id, creator_name)  # type: ignore
+        result = [Flag(f, client=self) for f in response]
         return result
 
     async def pools(
@@ -120,7 +141,7 @@ class AsyncYippiClient(AbstractYippi):
         category: str = None,
         order: str = None,
         limit: int = None,
-    ):
+    ) -> List[Pool]:
         response = await self._get_pools(
             name_matches,
             id_,
@@ -132,10 +153,10 @@ class AsyncYippiClient(AbstractYippi):
             category,
             order,
             limit,
-        )
-        result = [Pool(self, **p) for p in response]
+        )  # type: ignore
+        result = [Pool(p, client=self) for p in response]
         return result
 
-    async def pool(self, pool_id: int):
-        response = await self._get_pool(pool_id)
-        return Pool(self, **response)
+    async def pool(self, pool_id: int) -> Pool:
+        response = await self._get_pool(pool_id)  # type: ignore
+        return Pool(response, client=self)

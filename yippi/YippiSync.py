@@ -1,9 +1,12 @@
 from typing import List
+from typing import Optional
 from typing import Union
 
+import requests
 from requests.auth import HTTPBasicAuth
 
 from .AbstractYippi import AbstractYippi
+from .AbstractYippi import limiter
 from .Classes import Flag
 from .Classes import Note
 from .Classes import Pool
@@ -13,9 +16,22 @@ from .Exceptions import UserError
 
 
 class YippiClient(AbstractYippi):
-    def _call_api(self, method, url, data=None, file=None, **kwargs):
+    def __init__(
+        self,
+        project_name: str,
+        version: str,
+        creator: str,
+        session: requests.Session = None,
+    ) -> None:
+        super().__init__(project_name, version, creator)
+        self._session: requests.Session = session or requests.Session()
+
+    @limiter.ratelimit("call_api", delay=True)
+    def _call_api(
+        self, method: str, url: str, data: dict = None, file=None, **kwargs
+    ) -> Optional[Union[List[dict], dict]]:
         auth = None
-        if self._login:
+        if self._login != ("", ""):
             auth = HTTPBasicAuth(*self._login)
 
         query_string = self._generate_query_keys(**kwargs)
@@ -27,8 +43,8 @@ class YippiClient(AbstractYippi):
         if not r.status_code == 204:
             return r.json()
 
-    def _verify_response(self, r):
-        if r.status_code >= 300 and r.status_code < 500:
+    def _verify_response(self, r) -> None:
+        if 300 <= r.status_code < 500:
             res = r.json()
             if r.status_code >= 400:
                 raise UserError(res.get("message") or res.get("reason"), json=res)
@@ -36,9 +52,9 @@ class YippiClient(AbstractYippi):
         elif r.status_code >= 500:
             raise APIError(r.reason)
 
-        if (
-            "application/json" not in r.headers.get("Content-Type")
-            and r.status_code != 204
+        if r.status_code != 204 and (
+            not r.headers.get("Content-Type")
+            or "application/json" not in r.headers.get("Content-Type")
         ):
             res = r.text
             if "Not found." in res:
@@ -50,14 +66,14 @@ class YippiClient(AbstractYippi):
         tags: Union[List, str] = None,
         limit: int = None,
         page: Union[int, str] = None,
-    ):
+    ) -> List[Post]:
         response = self._get_posts(tags, limit, page)
-        result = [Post(self, **p) for p in response["posts"]]
+        result = [Post(p, client=self) for p in response]  # type: ignore
         return result
 
-    def post(self, post_id: int):
+    def post(self, post_id: int) -> Post:
         response = self._get_post(post_id)
-        return Post(self, **response["post"])
+        return Post(response, client=self)  # type: ignore
 
     def notes(
         self,
@@ -65,10 +81,10 @@ class YippiClient(AbstractYippi):
         post_id: int = None,
         post_tags_match: Union[List, str] = None,
         creator_name: str = None,
-        creator_id: str = None,
+        creator_id: int = None,
         is_active: bool = None,
         limit: int = None,
-    ):
+    ) -> List[Note]:
         response = self._get_notes(
             body_matches,
             post_id,
@@ -78,7 +94,7 @@ class YippiClient(AbstractYippi):
             is_active,
             limit,
         )
-        result = [Note(self, **n) for n in response]
+        result = [Note(n, client=self) for n in response]  # type: ignore
         return result
 
     def flags(
@@ -87,9 +103,9 @@ class YippiClient(AbstractYippi):
         creator_id: int = None,
         creator_name: str = None,
         limit: int = None,
-    ):
+    ) -> List[Flag]:
         response = self._get_flags(post_id, creator_id, creator_name)
-        result = [Flag(self, **f) for f in response]
+        result = [Flag(f, client=self) for f in response]  # type: ignore
         return result
 
     def pools(
@@ -104,7 +120,7 @@ class YippiClient(AbstractYippi):
         category: str = None,
         order: str = None,
         limit: int = None,
-    ):
+    ) -> List[Pool]:
         response = self._get_pools(
             name_matches,
             id_,
@@ -117,9 +133,9 @@ class YippiClient(AbstractYippi):
             order,
             limit,
         )
-        result = [Pool(self, **p) for p in response]
+        result = [Pool(p, client=self) for p in response]  # type: ignore
         return result
 
-    def pool(self, pool_id: int):
+    def pool(self, pool_id: int) -> Pool:
         response = self._get_pool(pool_id)
-        return Pool(self, **response)
+        return Pool(response, client=self)  # type: ignore

@@ -20,8 +20,8 @@ def read(*names, **kwargs):
 
 setup(
     name="yippi",
-    version="0.1.1",
-    license="GPL-3.0-only",
+    version="0.2.0.1",
+    license="LGPL-3.0-only",
     description="An (a)sync e621 API wrapper for Python.",
     long_description="%s\n%s"
     % (
@@ -43,7 +43,7 @@ setup(
         # complete classifier list: http://pypi.python.org/pypi?%3Aaction=list_classifiers
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
-        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Operating System :: Unix",
         "Operating System :: POSIX",
         "Operating System :: Microsoft :: Windows",
@@ -68,7 +68,7 @@ setup(
         # eg: 'keyword1', 'keyword2', 'keyword3',
     ],
     python_requires=">=3.7.*",
-    install_requires=["requests>=2.23.0", "aiohttp>=3.6.2"],
+    install_requires=["requests>=2.23.0", "aiohttp>=3.6.2", "pyrate-limiter>=2.3.4"],
     tests_require=[
         "pytest>=5.4.1",
         "pytest-recording>=0.7.0",
